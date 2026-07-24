@@ -9,7 +9,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 import static com.company.hrsettlement.settlement.domain.EmployeeDepartureTestBuilder.aDeparture;
+import static com.company.hrsettlement.settlement.domain.model.DepartureReason.ECONOMIC_DISMISSAL;
+import static com.company.hrsettlement.settlement.domain.model.DepartureReason.RESIGNATION;
 import static com.company.hrsettlement.settlement.domain.model.DepartureReason.RETIREMENT;
+import static com.company.hrsettlement.settlement.domain.model.DepartureReason.SERIOUS_MISCONDUCT;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("Prime d'anciennete")
@@ -84,5 +87,50 @@ class SeniorityBonusCalculatorTest {
 		BigDecimal bonus = seniorityBonusCalculator.compute(departure);
 
 		assertThat(bonus).isEqualByComparingTo("650000");
+	}
+
+	@Test
+	@DisplayName("ouvre le droit a la prime en cas de licenciement economique")
+	void shouldPayBonusOnEconomicDismissal() {
+		EmployeeDeparture departure = aDeparture()
+				.because(ECONOMIC_DISMISSAL)
+				.hiredOn(LocalDate.of(2023, 1, 1))
+				.leavingOn(LocalDate.of(2026, 1, 1))
+				.withMonthlySalary("1000000")
+				.build();
+
+		BigDecimal bonus = seniorityBonusCalculator.compute(departure);
+
+		assertThat(bonus).isEqualByComparingTo("300000");
+	}
+
+	@Test
+	@DisplayName("refuse la prime en cas de demission, quelle que soit l'anciennete")
+	void shouldNotPayBonusOnResignation() {
+		EmployeeDeparture departure = aDeparture()
+				.because(RESIGNATION)
+				.hiredOn(LocalDate.of(2006, 1, 1))
+				.leavingOn(LocalDate.of(2026, 1, 1))
+				.withMonthlySalary("1000000")
+				.build();
+
+		BigDecimal bonus = seniorityBonusCalculator.compute(departure);
+
+		assertThat(bonus).isEqualByComparingTo("0");
+	}
+
+	@Test
+	@DisplayName("refuse la prime en cas de faute grave, quelle que soit l'anciennete")
+	void shouldNotPayBonusOnSeriousMisconduct() {
+		EmployeeDeparture departure = aDeparture()
+				.because(SERIOUS_MISCONDUCT)
+				.hiredOn(LocalDate.of(2006, 1, 1))
+				.leavingOn(LocalDate.of(2026, 1, 1))
+				.withMonthlySalary("1000000")
+				.build();
+
+		BigDecimal bonus = seniorityBonusCalculator.compute(departure);
+
+		assertThat(bonus).isEqualByComparingTo("0");
 	}
 }
