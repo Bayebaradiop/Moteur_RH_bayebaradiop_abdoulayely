@@ -3,14 +3,16 @@ package com.company.hrsettlement.settlement.domain.calculator;
 import com.company.hrsettlement.settlement.domain.function.SeniorityFunctions;
 import com.company.hrsettlement.settlement.domain.model.EmployeeDeparture;
 import com.company.hrsettlement.settlement.domain.model.Money;
+import com.company.hrsettlement.settlement.domain.predicate.DeparturePredicates;
 
 import java.math.BigDecimal;
 
 /**
  * Calcule la prime d'anciennete due a l'employe.
  * <p>
- * Regle : 10 % du salaire mensuel pour chacune des cinq premieres annees, puis
- * 15 % pour chaque annee supplementaire.
+ * Regle : reservee a la retraite et au licenciement economique. 10 % du salaire
+ * mensuel pour chacune des cinq premieres annees, puis 15 % pour chaque annee
+ * supplementaire.
  */
 public class SeniorityBonusCalculator {
 
@@ -24,6 +26,10 @@ public class SeniorityBonusCalculator {
 	private static final BigDecimal ADDITIONAL_YEAR_RATE = new BigDecimal("0.15");
 
 	public BigDecimal compute(EmployeeDeparture departure) {
+		if (!DeparturePredicates.ELIGIBLE_FOR_SENIORITY_BONUS.test(departure)) {
+			return Money.ZERO;
+		}
+
 		int yearsWorked = SeniorityFunctions.YEARS_WORKED.apply(departure);
 
 		return Money.multiply(departure.baseSalary(), rateFor(yearsWorked));
