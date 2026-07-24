@@ -53,4 +53,36 @@ class SeniorityBonusCalculatorTest {
 
 		assertThat(bonus).isEqualByComparingTo("500000");
 	}
+
+	@Test
+	@DisplayName("majore a 15 % chaque annee au-dela de la cinquieme")
+	void shouldPayFifteenPercentForYearsBeyondTheFifth() {
+		// 10 annees : 5 x 10 % + 5 x 15 % = 125 % du salaire
+		EmployeeDeparture departure = aDeparture()
+				.because(RETIREMENT)
+				.hiredOn(LocalDate.of(2016, 1, 1))
+				.leavingOn(LocalDate.of(2026, 1, 1))
+				.withMonthlySalary("1000000")
+				.build();
+
+		BigDecimal bonus = seniorityBonusCalculator.compute(departure);
+
+		assertThat(bonus).isEqualByComparingTo("1250000");
+	}
+
+	@Test
+	@DisplayName("majore la premiere annee suivant le seuil de cinq ans")
+	void shouldApplyIncreasedRateFromTheSixthYear() {
+		// Valeur limite : 6 annees = 5 x 10 % + 1 x 15 %
+		EmployeeDeparture departure = aDeparture()
+				.because(RETIREMENT)
+				.hiredOn(LocalDate.of(2020, 1, 1))
+				.leavingOn(LocalDate.of(2026, 1, 1))
+				.withMonthlySalary("1000000")
+				.build();
+
+		BigDecimal bonus = seniorityBonusCalculator.compute(departure);
+
+		assertThat(bonus).isEqualByComparingTo("650000");
+	}
 }
