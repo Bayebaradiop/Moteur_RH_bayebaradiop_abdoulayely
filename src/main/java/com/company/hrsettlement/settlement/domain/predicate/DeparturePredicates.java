@@ -1,5 +1,6 @@
 package com.company.hrsettlement.settlement.domain.predicate;
 
+import com.company.hrsettlement.settlement.domain.model.DepartureReason;
 import com.company.hrsettlement.settlement.domain.model.EmployeeDeparture;
 
 import java.util.function.Predicate;
@@ -19,6 +20,17 @@ public final class DeparturePredicates {
 				case RETIREMENT, ECONOMIC_DISMISSAL -> true;
 				case RESIGNATION, SERIOUS_MISCONDUCT -> false;
 			};
+
+	/** Le preavis n'est exigible que d'un employe qui demissionne. */
+	public static final Predicate<EmployeeDeparture> IS_RESIGNATION =
+			departure -> departure.departureReason() == DepartureReason.RESIGNATION;
+
+	public static final Predicate<EmployeeDeparture> NOTICE_NOT_RESPECTED =
+			departure -> !departure.noticeRespected();
+
+	/** Seule une demission sans preavis expose l'employe a la retenue d'un mois de salaire. */
+	public static final Predicate<EmployeeDeparture> LIABLE_FOR_NOTICE_PENALTY =
+			IS_RESIGNATION.and(NOTICE_NOT_RESPECTED);
 
 	private DeparturePredicates() {
 	}
