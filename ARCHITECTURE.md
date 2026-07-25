@@ -18,14 +18,14 @@ L'architecture protège donc le métier de la technique : c'est le principe de l
 ```
                     ┌──────────────────────────────────────────────┐
                     │                    API                       │
-   HTTP  ─────────► │  SettlementController · DTO · Mapper         │  adaptateur primaire
-                    │  GlobalExceptionHandler                      │
+   HTTP  ─────────► │  SoldeControleur · DTO · Mapper         │  adaptateur primaire
+                    │  GestionnaireGlobalErreurs                      │
                     └───────────────────┬──────────────────────────┘
                                         │ dépend de ↓
                     ┌───────────────────▼──────────────────────────┐
                     │                APPLICATION                   │
-                    │  SettlementUseCase (port primaire)           │
-                    │  SettlementService (orchestration fine)      │
+                    │  CalculSoldeCasUsage (port primaire)           │
+                    │  SoldeService (orchestration fine)      │
                     └───────────────────┬──────────────────────────┘
                                         │ dépend de ↓
                     ┌───────────────────▼──────────────────────────┐
@@ -39,9 +39,9 @@ L'architecture protège donc le métier de la technique : c'est le principe de l
                                         │ implémente (inversion)
                     ┌───────────────────┴──────────────────────────┐
                     │              INFRASTRUCTURE                  │
-                    │  TaxAdministrationAdapter (impôts)           │  adaptateurs secondaires
-                    │  LabourInspectionAdapter (audit)             │
-                    │  DomainConfiguration (câblage Spring)        │
+                    │  AdaptateurFiscaliteProgressive (impôts)           │  adaptateurs secondaires
+                    │  AdaptateurInspectionJournalisee (audit)             │
+                    │  ConfigurationDomaine (câblage Spring)        │
                     └──────────────────────────────────────────────┘
 ```
 
@@ -56,66 +56,66 @@ C'est le **D** de SOLID (Dependency Inversion) appliqué à l'échelle de l'arch
 ```
 com.company.hrsettlement
 │
-├── HrSettlementApplication              amorçage Spring Boot (seul point "framework")
+├── MoteurRhApplication              amorçage Spring Boot (seul point "framework")
 │
 └── settlement
     │
     ├── api                              ADAPTATEUR PRIMAIRE (entrant)
-    │   ├── SettlementController         expose POST /api/v1/settlements
+    │   ├── SoldeControleur         expose POST /api/v1/settlements
     │   ├── dto
-    │   │   ├── SettlementRequest        contrat d'entrée (record + Bean Validation)
-    │   │   ├── SettlementResponse       contrat de sortie (record immuable)
-    │   │   └── ErrorResponse            format d'erreur uniforme
+    │   │   ├── SoldeRequete        contrat d'entrée (record + Bean Validation)
+    │   │   ├── SoldeReponse       contrat de sortie (record immuable)
+    │   │   └── ErreurReponse            format d'erreur uniforme
     │   ├── mapper
-    │   │   └── SettlementMapper         DTO ⇄ domaine, isolé du reste
+    │   │   └── SoldeConvertisseur         DTO ⇄ domaine, isolé du reste
     │   └── exception
-    │       └── GlobalExceptionHandler   @RestControllerAdvice, traduit métier → HTTP
+    │       └── GestionnaireGlobalErreurs   @RestControllerAdvice, traduit métier → HTTP
     │
     ├── application                       COUCHE APPLICATIVE (cas d'usage)
-    │   ├── SettlementUseCase            port primaire (interface)
-    │   └── SettlementService            implémentation : délègue au moteur
+    │   ├── CalculSoldeCasUsage            port primaire (interface)
+    │   └── SoldeService            implémentation : délègue au moteur
     │
     ├── domain                            CŒUR MÉTIER — aucune dépendance externe
     │   ├── model
-    │   │   ├── EmployeeDeparture        donnée d'entrée (record immuable)
-    │   │   ├── Settlement               résultat du calcul (record immuable)
-    │   │   ├── DepartureReason          enum des motifs de départ
-    │   │   ├── TaxBase                  assiette fiscale (taxable + exonéré)
-    │   │   └── Money                    règle unique d'arrondi monétaire
+    │   │   ├── DepartEmploye        donnée d'entrée (record immuable)
+    │   │   ├── Solde               résultat du calcul (record immuable)
+    │   │   ├── MotifDepart          enum des motifs de départ
+    │   │   ├── AssietteFiscale                  assiette fiscale (taxable + exonéré)
+    │   │   └── Monnaie                    règle unique d'arrondi monétaire
     │   ├── engine
-    │   │   └── SettlementEngine         ORCHESTRE, ne calcule pas lui-même
+    │   │   └── MoteurSolde         ORCHESTRE, ne calcule pas lui-même
     │   ├── calculator                    une règle = un calculateur
-    │   │   ├── LeaveCalculator          indemnité de congés non pris
-    │   │   ├── SeniorityBonusCalculator prime d'ancienneté
-    │   │   ├── NoticePenaltyCalculator  pénalité de préavis
-    │   │   ├── GrossCalculator          montant brut
-    │   │   ├── TaxBaseCalculator        répartition taxable / exonéré
-    │   │   └── SettlementCalculators    paramètre-objet regroupant les calculateurs
+    │   │   ├── CalculateurConges          indemnité de congés non pris
+    │   │   ├── CalculateurPrimeAnciennete prime d'ancienneté
+    │   │   ├── CalculateurPenalitePreavis  pénalité de préavis
+    │   │   ├── CalculateurBrut          montant brut
+    │   │   ├── CalculateurAssietteFiscale        répartition taxable / exonéré
+    │   │   └── CalculateursSolde    paramètre-objet regroupant les calculateurs
     │   ├── validator                     validation métier (indépendante de Spring)
-    │   │   ├── DepartureRule            contrat d'une règle de validation
-    │   │   ├── DepartureValidator       composition des règles
+    │   │   ├── RegleDepart            contrat d'une règle de validation
+    │   │   ├── ValidateurDepart       composition des règles
     │   │   └── rule/…                   une classe par règle
     │   ├── predicate                     règles booléennes réutilisables
     │   ├── function                      transformations réutilisables
     │   ├── port                          PORTS SECONDAIRES (interfaces)
-    │   │   ├── TaxAdministrationPort     calcul de l'impôt (système externe)
-    │   │   ├── LabourInspectionPort      notification d'audit (système externe)
-    │   │   └── SettlementHistoryPort     archivage des soldes calculés
+    │   │   ├── PortAdministrationFiscale     calcul de l'impôt (système externe)
+    │   │   ├── PortInspectionTravail      notification d'audit (système externe)
+    │   │   └── PortHistoriqueSoldes     archivage des soldes calculés
     │   └── exception                     exceptions métier explicites
     │
     └── infrastructure                    ADAPTATEURS SECONDAIRES (sortants)
         ├── tax
-        │   └── ProgressiveTaxAdministrationAdapter
+        │   └── AdaptateurFiscaliteProgressive
         ├── inspection
-        │   └── LoggingLabourInspectionAdapter
+        │   └── AdaptateurInspectionJournalisee
         ├── persistence                   PostgreSQL (Docker) + Flyway
-        │   ├── SettlementHistoryEntity   table settlement_history
-        │   ├── SettlementHistoryJpaRepository
-        │   └── JpaSettlementHistoryAdapter
+        │   ├── HistoriqueSoldeEntite   table historique_solde
+        │   ├── HistoriqueSoldeDepotJpa
+        │   └── AdaptateurHistoriqueSoldeJpa
         └── config
-            ├── DomainConfiguration       instancie le domaine en beans Spring
-            ├── TimeConfiguration         horloge injectable
-            └── OpenApiConfiguration      métadonnées de la documentation
+            ├── ConfigurationDomaine       instancie le domaine en beans Spring
+            ├── ConfigurationTemps         horloge injectable
+            └── ConfigurationOpenApi      métadonnées de la documentation
 ```
 
 ---
@@ -138,19 +138,19 @@ mutables. Un `record` donne l'immuabilité, `equals`/`hashCode`/`toString` corre
 constructeur canonique où placer les invariants (`Objects.requireNonNull`). Aucun `Optional`
 en attribut : un attribut absent d'un record métier signalerait un modèle mal défini.
 
-**`Money`** centralise `scale = 2` et `RoundingMode.HALF_UP`. Sans lui, la règle d'arrondi
+**`Monnaie`** centralise `scale = 2` et `RoundingMode.HALF_UP`. Sans lui, la règle d'arrondi
 serait dupliquée dans chaque calculateur — violation directe de DRY, et source classique de
 centimes qui divergent entre deux calculs.
 
-**`engine` — `SettlementEngine` orchestre.** Il ne connaît aucune formule : il enchaîne les
-calculateurs, appelle les ports et assemble le `Settlement`. C'est le **S** de SOLID : sa
+**`engine` — `MoteurSolde` orchestre.** Il ne connaît aucune formule : il enchaîne les
+calculateurs, appelle les ports et assemble le `Solde`. C'est le **S** de SOLID : sa
 seule responsabilité est la *coordination*. Une modification du barème des congés ne
 touche jamais le moteur.
 
 **`calculator` — une règle = une classe.** Chaque calculateur est une unité testable qui
 répond à une seule question métier. Ajouter une règle (ex. indemnité de licenciement) =
 créer une classe et l'injecter, **sans modifier** l'existant : c'est le **O** (Open/Closed).
-`SettlementCalculators` est un *paramètre-objet* : il évite un constructeur de moteur à huit
+`CalculateursSolde` est un *paramètre-objet* : il évite un constructeur de moteur à huit
 arguments tout en conservant l'injection individuelle de chaque calculateur.
 
 **`predicate` / `function`.** Les conditions métier récurrentes (`ELIGIBLE_FOR_SENIORITY_BONUS`,
@@ -162,11 +162,11 @@ suppriment de la duplication et donnent un **nom métier** à une expression boo
 **`validator`.** La validation métier (cohérence des dates, salaire, règles liées au motif)
 appartient au domaine : elle doit s'appliquer même si l'appel ne vient pas de HTTP. Elle est
 distincte de la Bean Validation, qui, elle, protège le **contrat d'API**. Chaque règle est
-une classe implémentant `DepartureRule` : le validateur compose une liste de règles
+une classe implémentant `RegleDepart` : le validateur compose une liste de règles
 (Open/Closed encore, et **I** — interface d'une seule méthode).
 
 **`port`.** Deux interfaces courtes, une par système externe :
-`TaxAdministrationPort` (question → réponse) et `LabourInspectionPort` (action → effet de
+`PortAdministrationFiscale` (question → réponse) et `PortInspectionTravail` (action → effet de
 bord). Les séparer respecte le **I** (Interface Segregation) : un adaptateur d'audit n'a
 aucune raison de connaître le calcul de l'impôt. Toute implémentation est substituable sans
 que le moteur s'en aperçoive (**L**, Liskov) — c'est précisément ce que les tests prouvent
@@ -174,8 +174,8 @@ en injectant des mocks Mockito.
 
 ### 3.2 `application` — le cas d'usage
 
-`SettlementUseCase` est un **port primaire** : il décrit ce que le système sait faire, en
-vocabulaire métier, sans HTTP. `SettlementService` l'implémente en déléguant au moteur. Le
+`CalculSoldeCasUsage` est un **port primaire** : il décrit ce que le système sait faire, en
+vocabulaire métier, sans HTTP. `SoldeService` l'implémente en déléguant au moteur. Le
 service est volontairement **anémique** : toute logique qui s'y glisserait serait une règle
 métier échappée du domaine. Son rôle est le pilotage applicatif (transaction, sécurité,
 journalisation) — préoccupations qui n'ont rien à faire dans le moteur.
@@ -189,14 +189,14 @@ Le contrôleur ne fait que trois choses : recevoir, déléguer, répondre. Aucun
 aucun calcul, aucune construction manuelle de réponse.
 
 **DTO ≠ modèle métier.** Les records du domaine ne sont jamais sérialisés : exposer
-`EmployeeDeparture` en JSON couplerait le contrat public à la structure interne, et toute
+`DepartEmploye` en JSON couplerait le contrat public à la structure interne, et toute
 évolution du domaine deviendrait un *breaking change* pour les clients.
 
 **Le mapper est une classe dédiée.** Le contrôleur ne contient pas de code de mapping (il
-n'écrit aucun `new EmployeeDeparture(...)`) : il *invoque* le mapper. Le mapping reste ainsi
+n'écrit aucun `new DepartEmploye(...)`) : il *invoque* le mapper. Le mapping reste ainsi
 isolé, testable seul, et modifiable sans toucher au contrôleur.
 
-**`GlobalExceptionHandler`** traduit les exceptions métier en codes HTTP et produit un format
+**`GestionnaireGlobalErreurs`** traduit les exceptions métier en codes HTTP et produit un format
 d'erreur unique. C'est la frontière de traduction : le domaine lève `InvalidDatesException`
 (vocabulaire métier), l'API répond `400` (vocabulaire HTTP). Aucune exception brute ne fuit.
 
@@ -206,12 +206,12 @@ Les implémentations des ports vivent ici, annotées Spring. Remplacer l'adaptat
 par un appel à une API externe se fait **sans modifier une seule ligne du domaine**.
 
 **Persistance.** La base PostgreSQL est un détail d'infrastructure de plus. Le domaine
-exprime `SettlementHistoryPort.record(Settlement)` ; `JpaSettlementHistoryAdapter` le
-satisfait avec JPA. L'entité `SettlementHistoryEntity` est **distincte du record
-`Settlement`** : les exigences de JPA (constructeur sans argument, champs mutables,
+exprime `PortHistoriqueSoldes.archiver(Solde)` ; `AdaptateurHistoriqueSoldeJpa` le
+satisfait avec JPA. L'entité `HistoriqueSoldeEntite` est **distincte du record
+`Solde`** : les exigences de JPA (constructeur sans argument, champs mutables,
 identifiant technique) ne doivent pas rendre le modèle métier mutable.
 
-L'archivage est déclenché par `SettlementService`, pas par le moteur : conserver une trace
+L'archivage est déclenché par `SoldeService`, pas par le moteur : conserver une trace
 est une préoccupation applicative, et le moteur doit rester un calcul pur, exécutable dans
 un test sans base de données. Le `@Transactional` du service garantit qu'un départ rejeté
 par le domaine ne laisse aucune ligne derrière lui.
@@ -220,7 +220,7 @@ Le schéma est versionné par **Flyway** et Hibernate est en `ddl-auto: validate
 structure de la base est du code relu et rejouable, jamais une modification manuelle. La
 suite de tests, elle, tourne sur H2 en mémoire pour rester exécutable sans Docker.
 
-`DomainConfiguration` instancie les objets du domaine (calculateurs, validateur, moteur) en
+`ConfigurationDomaine` instancie les objets du domaine (calculateurs, validateur, moteur) en
 `@Bean` par injection de constructeur. C'est ce qui permet au domaine de rester sans
 annotation tout en bénéficiant de l'injection de dépendances : le câblage est une décision
 d'infrastructure, pas une propriété du métier.
@@ -229,14 +229,14 @@ d'infrastructure, pas une propriété du métier.
 
 ## 4. Approche API First
 
-Le contrat OpenAPI 3 (`src/main/resources/openapi/settlement-api.yaml`) est écrit **avant**
+Le contrat OpenAPI 3 (`src/main/resources/openapi/solde-api.yaml`) est écrit **avant**
 les contrôleurs et fait foi. Il fixe :
 
 | Élément | Décision |
 |---|---|
 | Endpoint | `POST /api/v1/settlements` |
-| Entrée | `SettlementRequest` (JSON) |
-| Sortie | `SettlementResponse` (JSON) |
+| Entrée | `SoldeRequete` (JSON) |
+| Sortie | `SoldeReponse` (JSON) |
 | `200 OK` | solde calculé |
 | `400 Bad Request` | violation de la Bean Validation **ou** règle métier invalide |
 | `422 Unprocessable Entity` | *non retenu* : le client ne peut pas distinguer utilement les deux cas |
@@ -251,14 +251,14 @@ conforme au contrat.
 
 | # | Règle | Classe responsable |
 |---|-------|--------------------|
-| 1 | Congés non pris : `jours × (salaire / 21)` | `LeaveCalculator` |
-| 2 | Prime d'ancienneté : retraite et licenciement économique uniquement ; 10 %/an les 5 premières années, 15 %/an au-delà | `SeniorityBonusCalculator` |
-| 3 | Préavis : démission non respectée → −1 salaire mensuel (net final possiblement négatif) | `NoticePenaltyCalculator` |
-| 4 | Brut = congés + prime − pénalité | `GrossCalculator` |
-| 5 | Assiette : prime exonérée jusqu'à 5 000 000 XOF, le reste taxable | `TaxBaseCalculator` |
-| 6 | Impôt : **jamais calculé dans le moteur** | `TaxAdministrationPort` (externe) |
-| 7 | Net = brut − impôt | `SettlementEngine` |
-| 8 | Net > 30 000 000 XOF → `notifyAudit(employeeId)` immédiat | `SettlementEngine` + `LabourInspectionPort` |
+| 1 | Congés non pris : `jours × (salaire / 21)` | `CalculateurConges` |
+| 2 | Prime d'ancienneté : retraite et licenciement économique uniquement ; 10 %/an les 5 premières années, 15 %/an au-delà | `CalculateurPrimeAnciennete` |
+| 3 | Préavis : démission non respectée → −1 salaire mensuel (net final possiblement négatif) | `CalculateurPenalitePreavis` |
+| 4 | Brut = congés + prime − pénalité | `CalculateurBrut` |
+| 5 | Assiette : prime exonérée jusqu'à 5 000 000 XOF, le reste taxable | `CalculateurAssietteFiscale` |
+| 6 | Impôt : **jamais calculé dans le moteur** | `PortAdministrationFiscale` (externe) |
+| 7 | Net = brut − impôt | `MoteurSolde` |
+| 8 | Net > 30 000 000 XOF → `notifierAudit(matricule)` immédiat | `MoteurSolde` + `PortInspectionTravail` |
 
 **Ordre d'évaluation dans le moteur :** validation métier → congés → prime → pénalité →
 brut → assiette → impôt (port) → net → audit (port). L'audit est déclenché **après** le net
@@ -271,7 +271,7 @@ et uniquement à partir de lui.
 - `BigDecimal` pour **tout** montant — `double`/`float` interdits (erreurs d'arrondi
   inacceptables sur de la paie) ;
 - `LocalDate` pour **toute** date — `Date`/`Calendar` interdits (mutables, API datée) ;
-- toute division précise explicitement `scale` **et** `RoundingMode` (centralisés dans `Money`) ;
+- toute division précise explicitement `scale` **et** `RoundingMode` (centralisés dans `Monnaie`) ;
 - aucune récupération de la date courante dans le domaine : les dates arrivent en entrée,
   ce qui rend chaque test déterministe ;
 - pas de Lombok : les `record` et le Java 21 suffisent, sans génération de bytecode masquée.

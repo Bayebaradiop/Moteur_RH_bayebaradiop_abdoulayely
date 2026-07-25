@@ -4,8 +4,6 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
-  # Base dockerisee : voir docker-compose.yml (port hote 5436).
-  # Les variables d'environnement permettent de pointer une autre base sans rebuild.
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5436/moteur_rh}
     username: ${DATABASE_USER:moteur_rh}

@@ -31,7 +31,7 @@ mvn spring-boot:run      # http://localhost:8090
 ```
 
 - Swagger UI : http://localhost:8090/swagger-ui.html
-- Contrat de référence (API First) : [`src/main/resources/openapi/settlement-api.yaml`](src/main/resources/openapi/settlement-api.yaml)
+- Contrat de référence (API First) : [`src/main/resources/openapi/solde-api.yaml`](src/main/resources/openapi/solde-api.yaml)
 
 > Si le port est occupé : `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8095`
 
@@ -43,7 +43,7 @@ mvn spring-boot:run      # http://localhost:8090
 | Hôte / port | `localhost:5436` (le port 5432 est souvent déjà pris) |
 | Base / utilisateur / mot de passe | `moteur_rh` / `moteur_rh` / `moteur_rh` |
 | Schéma | géré par **Flyway** ([`db/migration`](src/main/resources/db/migration)), `ddl-auto: validate` |
-| Table | `settlement_history` — chaque solde calculé y est archivé |
+| Table | `historique_solde` — chaque solde calculé y est archivé |
 
 Les paramètres de connexion sont surchargeables sans rebuild :
 `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD` (et `POSTGRES_PORT` côté compose).
@@ -54,7 +54,7 @@ docker compose down       # arrêter (données conservées dans le volume)
 docker compose down -v    # arrêter et supprimer les données
 
 docker exec moteur-rh-postgres psql -U moteur_rh -d moteur_rh \
-  -c "SELECT employee_id, net_amount, audit_triggered, recorded_at FROM settlement_history;"
+  -c "SELECT matricule_employe, montant_net, audit_declenche, enregistre_le FROM historique_solde;"
 ```
 
 La suite de tests utilise **H2 en mémoire** ([`src/test/resources/application.yml`](src/test/resources/application.yml)) :
@@ -63,29 +63,29 @@ La suite de tests utilise **H2 en mémoire** ([`src/test/resources/application.y
 ## Appeler l'API
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/settlements \
+curl -X POST http://localhost:8090/api/v1/settlements \
   -H 'Content-Type: application/json' \
   -d '{
-    "employeeId": "EMP-001",
-    "hireDate": "2016-01-01",
-    "departureDate": "2026-01-01",
-    "departureReason": "RETIREMENT",
-    "baseSalary": 1050000,
-    "remainingLeaveDays": 10,
-    "noticeRespected": true
+    "matriculeEmploye": "EMP-001",
+    "dateEmbauche": "2016-01-01",
+    "dateDepart": "2026-01-01",
+    "motifDepart": "RETRAITE",
+    "salaireBase": 1050000,
+    "joursCongesRestants": 10,
+    "preavisRespecte": true
   }'
 ```
 
 ```json
 {
-  "employeeId": "EMP-001",
-  "leaveCompensation": 500000.00,
-  "seniorityBonus": 1312500.00,
-  "noticePenalty": 0.00,
-  "grossAmount": 1812500.00,
-  "taxAmount": 0.00,
-  "netAmount": 1812500.00,
-  "auditTriggered": false
+  "matriculeEmploye": "EMP-001",
+  "indemniteConges": 500000.00,
+  "primeAnciennete": 1312500.00,
+  "penalitePreavis": 0.00,
+  "montantBrut": 1812500.00,
+  "montantImpot": 0.00,
+  "montantNet": 1812500.00,
+  "auditDeclenche": false
 }
 ```
 
@@ -93,11 +93,11 @@ En cas d'erreur, la réponse a toujours la même forme :
 
 ```json
 {
-  "timestamp": "2026-01-01T10:15:30",
-  "status": 400,
-  "error": "Bad Request",
+  "horodatage": "2026-01-01T10:15:30",
+  "statut": 400,
+  "erreur": "Bad Request",
   "message": "La date de depart doit etre posterieure a la date d'embauche",
-  "path": "/api/v1/settlements"
+  "chemin": "/api/v1/settlements"
 }
 ```
 
@@ -107,15 +107,15 @@ En cas d'erreur, la réponse a toujours la même forme :
 
 | # | Règle | Classe responsable |
 |---|-------|--------------------|
-| 1 | Congés non pris : `jours × (salaire / 21)` | `LeaveCalculator` |
-| 2 | Prime d'ancienneté : retraite et licenciement économique **uniquement** ; 10 %/an les 5 premières années, 15 %/an ensuite | `SeniorityBonusCalculator` |
-| 3 | Préavis non respecté sur démission : −1 salaire mensuel (net final possiblement négatif) | `NoticePenaltyCalculator` |
-| 4 | Brut = congés + prime − pénalité | `GrossCalculator` |
-| 5 | Prime exonérée jusqu'à 5 000 000 XOF, surplus imposable | `TaxBaseCalculator` |
-| 6 | Impôt : **jamais** calculé par le moteur | `TaxAdministrationPort` |
-| 7 | Net = brut − impôt | `SettlementEngine` |
-| 8 | Net > 30 000 000 XOF → `notifyAudit(employeeId)` immédiat | `SettlementEngine` + `LabourInspectionPort` |
-| 9 | Tout solde calculé est archivé ; un départ rejeté ne laisse aucune trace | `SettlementService` + `SettlementHistoryPort` |
+| 1 | Congés non pris : `jours × (salaire / 21)` | `CalculateurConges` |
+| 2 | Prime d'ancienneté : retraite et licenciement économique **uniquement** ; 10 %/an les 5 premières années, 15 %/an ensuite | `CalculateurPrimeAnciennete` |
+| 3 | Préavis non respecté sur démission : −1 salaire mensuel (net final possiblement négatif) | `CalculateurPenalitePreavis` |
+| 4 | Brut = congés + prime − pénalité | `CalculateurBrut` |
+| 5 | Prime exonérée jusqu'à 5 000 000 XOF, surplus imposable | `CalculateurAssietteFiscale` |
+| 6 | Impôt : **jamais** calculé par le moteur | `PortAdministrationFiscale` |
+| 7 | Net = brut − impôt | `MoteurSolde` |
+| 8 | Net > 30 000 000 XOF → `notifierAudit(matricule)` immédiat | `MoteurSolde` + `PortInspectionTravail` |
+| 9 | Tout solde calculé est archivé ; un départ rejeté ne laisse aucune trace | `SoldeService` + `PortHistoriqueSoldes` |
 
 ### Hypothèses d'interprétation de l'énoncé
 
@@ -125,13 +125,13 @@ constante, donc modifiable en un point unique :
 1. **Prime d'ancienneté — taux annuels.** « 5 premières années 10 %, puis années
    supplémentaires 15 % » est appliqué **par année** :
    `prime = salaire × (10 % × min(années, 5) + 15 % × max(années − 5, 0))`.
-   Exemple : 10 ans → 125 % du salaire. *(constantes `BASE_YEAR_RATE` /
-   `ADDITIONAL_YEAR_RATE` dans `SeniorityBonusCalculator`)*
+   Exemple : 10 ans → 125 % du salaire. *(constantes `TAUX_ANNEE_BASE` /
+   `TAUX_ANNEE_SUPPLEMENTAIRE` dans `CalculateurPrimeAnciennete`)*
 2. **Règle de validation dépendante du motif.** L'énoncé demande « certaines règles
    dépendent du motif de départ » sans les nommer : un départ à la retraite exige au moins
-   **une année** d'ancienneté *(`RetirementSeniorityRule`)*.
+   **une année** d'ancienneté *(`RegleAncienneteRetraite`)*.
 
-Le barème fiscal progressif de `ProgressiveTaxAdministrationAdapter` (0 / 20 / 30 / 35 / 40 %)
+Le barème fiscal progressif de `AdaptateurFiscaliteProgressive` (0 / 20 / 30 / 35 / 40 %)
 est une implémentation d'exemple : le domaine n'en dépend pas et l'adaptateur est
 remplaçable sans toucher au métier.
 
@@ -142,7 +142,7 @@ remplaçable sans toucher au métier.
 ```
 com.company.hrsettlement.settlement
 ├── api              contrôleur REST, DTO, mapper, gestion des erreurs
-├── application      SettlementUseCase (port primaire) + SettlementService
+├── application      CalculSoldeCasUsage (port primaire) + SoldeService
 ├── domain           modèles, moteur, calculateurs, validateurs, predicates,
 │                    functions, ports, exceptions  ← aucune dépendance externe
 └── infrastructure   adaptateurs (impôts, inspection) + câblage Spring
@@ -152,18 +152,18 @@ com.company.hrsettlement.settlement
 
 | Classe | Ce qu'elle prouve |
 |---|---|
-| `LeaveCalculatorTest` | valeur journalière, arrondi au centime |
-| `SeniorityBonusCalculatorTest` | barème par tranche, seuils exacts, éligibilité |
-| `NoticePenaltyCalculatorTest` | retenue limitée aux démissions sans préavis |
-| `GrossCalculatorTest` | consolidation, brut négatif autorisé |
-| `TaxBaseCalculatorTest` | plafond d'exonération, assiette jamais négative |
-| `DepartureValidatorTest` | règles métier + extension par composition (Mockito) |
-| `SettlementEngineTest` | orchestration, `when()`, `ArgumentCaptor`, `verify()` sur l'audit |
-| `SettlementServiceTest` | délégation stricte au domaine, archivage, absence d'archivage si rejet |
-| `SettlementMapperTest` | fidélité du mapping DTO ⇄ domaine |
-| `SettlementControllerTest` | contrat HTTP, 200/400, format d'erreur |
-| `ProgressiveTaxAdministrationAdapterTest` | barème progressif par tranche |
-| `SettlementApiIntegrationTest` | parcours complet, câblage réel |
+| `CalculateurCongesTest` | valeur journalière, arrondi au centime |
+| `CalculateurPrimeAncienneteTest` | barème par tranche, seuils exacts, éligibilité |
+| `CalculateurPenalitePreavisTest` | retenue limitée aux démissions sans préavis |
+| `CalculateurBrutTest` | consolidation, brut négatif autorisé |
+| `CalculateurAssietteFiscaleTest` | plafond d'exonération, assiette jamais négative |
+| `ValidateurDepartTest` | règles métier + extension par composition (Mockito) |
+| `MoteurSoldeTest` | orchestration, `when()`, `ArgumentCaptor`, `verify()` sur l'audit |
+| `SoldeServiceTest` | délégation stricte au domaine, archivage, absence d'archivage si rejet |
+| `SoldeConvertisseurTest` | fidélité du mapping DTO ⇄ domaine |
+| `SoldeControleurTest` | contrat HTTP, 200/400, format d'erreur |
+| `AdaptateurFiscaliteProgressiveTest` | barème progressif par tranche |
+| `SoldeApiIntegrationTest` | parcours complet, câblage réel |
 
 ## Historique Git
 

@@ -1,0 +1,215 @@
+openapi: 3.0.3
+
+info:
+  title: Moteur RH - Solde de tout compte
+  description: |
+    API de calcul du solde de tout compte d'un employe.
+
+    Le moteur calcule l'indemnite de conges non pris, la prime d'anciennete,
+    la penalite de preavis, le montant brut, l'impot puis le montant net.
+    Un audit de l'inspection du travail est declenche au-dela d'un seuil de net.
+  version: 1.0.0
+  contact:
+    name: Equipe RH
+    email: rh@company.com
+
+servers:
+  - url: http://localhost:8080
+    description: Environnement local
+
+tags:
+  - name: Settlements
+    description: Calcul du solde de tout compte
+
+paths:
+  /api/v1/settlements:
+    post:
+      tags: [ Settlements ]
+      summary: Calcule le solde de tout compte d'un employe
+      description: |
+        Recoit les informations de depart d'un employe et retourne le detail du
+        solde de tout compte. Le montant net peut etre negatif lorsque la penalite
+        de preavis depasse les indemnites dues.
+      operationId: calculerSolde
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SoldeRequete'
+            examples:
+              retraite:
+                summary: Depart a la retraite avec conges restants
+                value:
+                  matriculeEmploye: "EMP-001"
+                  dateEmbauche: "2010-01-01"
+                  dateDepart: "2026-01-01"
+                  motifDepart: "RETRAITE"
+                  salaireBase: 1000000
+                  joursCongesRestants: 10
+                  preavisRespecte: true
+              demission:
+                summary: Demission sans preavis respecte
+                value:
+                  matriculeEmploye: "EMP-002"
+                  dateEmbauche: "2022-01-01"
+                  dateDepart: "2026-01-01"
+                  motifDepart: "DEMISSION"
+                  salaireBase: 500000
+                  joursCongesRestants: 2
+                  preavisRespecte: false
+      responses:
+        '200':
+          description: Solde de tout compte calcule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SoldeReponse'
+        '400':
+          description: |
+            Requete invalide : contrat non respecte (Bean Validation) ou regle
+            metier violee (dates incoherentes, salaire nul, conges negatifs).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErreurReponse'
+              example:
+                horodatage: "2026-01-01T10:15:30"
+                statut: 400
+                erreur: "Bad Request"
+                message: "La date de depart doit etre posterieure a la date d'embauche"
+                chemin: "/api/v1/settlements"
+        '500':
+          description: Erreur interne inattendue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErreurReponse'
+
+components:
+  schemas:
+
+    SoldeRequete:
+      type: object
+      description: Informations de depart d'un employe.
+      required:
+        - matriculeEmploye
+        - dateEmbauche
+        - dateDepart
+        - motifDepart
+        - salaireBase
+        - joursCongesRestants
+        - preavisRespecte
+      properties:
+        matriculeEmploye:
+          type: string
+          description: Identifiant de l'employe
+          example: "EMP-001"
+        dateEmbauche:
+          type: string
+          format: date
+          description: Date d'embauche (passee)
+          example: "2010-01-01"
+        dateDepart:
+          type: string
+          format: date
+          description: Date de depart, strictement posterieure a la date d'embauche
+          example: "2026-01-01"
+        motifDepart:
+          $ref: '#/components/schemas/MotifDepart'
+        salaireBase:
+          type: number
+          format: double
+          description: Salaire mensuel de base en XOF, strictement positif
+          example: 1000000
+        joursCongesRestants:
+          type: integer
+          description: Nombre de jours de conges non pris
+          minimum: 0
+          example: 10
+        preavisRespecte:
+          type: boolean
+          description: Indique si le preavis a ete respecte
+          example: true
+
+    SoldeReponse:
+      type: object
+      description: Detail du solde de tout compte.
+      required:
+        - matriculeEmploye
+        - indemniteConges
+        - primeAnciennete
+        - penalitePreavis
+        - montantBrut
+        - montantImpot
+        - montantNet
+        - auditDeclenche
+      properties:
+        matriculeEmploye:
+          type: string
+          example: "EMP-001"
+        indemniteConges:
+          type: number
+          description: Indemnite de conges non pris
+          example: 476190.00
+        primeAnciennete:
+          type: number
+          description: Prime d'anciennete (0 si non eligible)
+          example: 2150000.00
+        penalitePreavis:
+          type: number
+          description: Penalite de preavis (0 si non applicable)
+          example: 0.00
+        montantBrut:
+          type: number
+          description: Montant brut, potentiellement negatif
+          example: 2626190.00
+        montantImpot:
+          type: number
+          description: Impot calcule par l'administration fiscale
+          example: 95238.00
+        montantNet:
+          type: number
+          description: Montant net verse a l'employe
+          example: 2530952.00
+        auditDeclenche:
+          type: boolean
+          description: Vrai si l'inspection du travail a ete notifiee
+          example: false
+
+    MotifDepart:
+      type: string
+      description: Motif du depart de l'employe.
+      enum:
+        - DEMISSION
+        - RETRAITE
+        - LICENCIEMENT_ECONOMIQUE
+        - FAUTE_GRAVE
+      example: RETRAITE
+
+    ErreurReponse:
+      type: object
+      description: Format d'erreur uniforme de l'API.
+      required: [ horodatage, statut, erreur, message, chemin ]
+      properties:
+        horodatage:
+          type: string
+          format: date-time
+          description: Date et heure de l'erreur
+          example: "2026-01-01T10:15:30"
+        statut:
+          type: integer
+          description: Code HTTP retourne
+          example: 400
+        erreur:
+          type: string
+          description: Libelle standard du code HTTP
+          example: "Bad Request"
+        message:
+          type: string
+          description: Explication destinee au client
+          example: "Le salaire de base doit etre strictement positif"
+        chemin:
+          type: string
+          description: URL appelee
+          example: "/api/v1/settlements"
