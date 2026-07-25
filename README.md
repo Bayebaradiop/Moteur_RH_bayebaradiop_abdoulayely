@@ -3,7 +3,7 @@
 API REST de calcul du solde de tout compte d'un employé : indemnité de congés non pris,
 prime d'ancienneté, pénalité de préavis, brut, impôt, net et déclenchement d'audit.
 
-Projet développé en **architecture hexagonale** et **TDD strict** (RED → GREEN → REFACTOR),
+Projet développé en **architecture en couches** et **TDD strict** (RED → GREEN → REFACTOR),
 binôme **bayebaradiop / abdoulayely**.
 
 > L'architecture complète et la justification de chaque choix sont dans
@@ -26,7 +26,7 @@ binôme **bayebaradiop / abdoulayely**.
 
 ```bash
 docker compose up -d     # PostgreSQL 16 (port hôte 5436)
-mvn test                 # 49 tests — ne nécessite pas Docker (base H2 en mémoire)
+mvn test                 # 42 tests — ne nécessite pas Docker (base H2 en mémoire)
 mvn spring-boot:run      # http://localhost:8090
 ```
 
@@ -110,12 +110,12 @@ En cas d'erreur, la réponse a toujours la même forme :
 | 1 | Congés non pris : `jours × (salaire / 21)` | `CalculateurConges` |
 | 2 | Prime d'ancienneté : retraite et licenciement économique **uniquement** ; 10 %/an les 5 premières années, 15 %/an ensuite | `CalculateurPrimeAnciennete` |
 | 3 | Préavis non respecté sur démission : −1 salaire mensuel (net final possiblement négatif) | `CalculateurPenalitePreavis` |
-| 4 | Brut = congés + prime − pénalité | `CalculateurBrut` |
-| 5 | Prime exonérée jusqu'à 5 000 000 XOF, surplus imposable | `CalculateurAssietteFiscale` |
-| 6 | Impôt : **jamais** calculé par le moteur | `PortAdministrationFiscale` |
+| 4 | Brut = congés + prime − pénalité | `MoteurSolde` |
+| 5 | Prime exonérée jusqu'à 5 000 000 XOF, surplus imposable | `MoteurSolde` |
+| 6 | Impôt : **jamais** calculé par le moteur | `AdministrationFiscale` |
 | 7 | Net = brut − impôt | `MoteurSolde` |
-| 8 | Net > 30 000 000 XOF → `notifierAudit(matricule)` immédiat | `MoteurSolde` + `PortInspectionTravail` |
-| 9 | Tout solde calculé est archivé ; un départ rejeté ne laisse aucune trace | `SoldeService` + `PortHistoriqueSoldes` |
+| 8 | Net > 30 000 000 XOF → `notifierAudit(matricule)` immédiat | `MoteurSolde` + `InspectionTravail` |
+| 9 | Tout solde calculé est archivé ; un départ rejeté ne laisse aucune trace | `MoteurSolde` + `ArchiveurSolde` |
 
 ### Hypothèses d'interprétation de l'énoncé
 
@@ -129,9 +129,9 @@ constante, donc modifiable en un point unique :
    `TAUX_ANNEE_SUPPLEMENTAIRE` dans `CalculateurPrimeAnciennete`)*
 2. **Règle de validation dépendante du motif.** L'énoncé demande « certaines règles
    dépendent du motif de départ » sans les nommer : un départ à la retraite exige au moins
-   **une année** d'ancienneté *(`RegleAncienneteRetraite`)*.
+   **une année** d'ancienneté *(`ValidateurDepart`)*.
 
-Le barème fiscal progressif de `AdaptateurFiscaliteProgressive` (0 / 20 / 30 / 35 / 40 %)
+Le barème fiscal progressif de `AdministrationFiscaleProgressive` (0 / 20 / 30 / 35 / 40 %)
 est une implémentation d'exemple : le domaine n'en dépend pas et l'adaptateur est
 remplaçable sans toucher au métier.
 
@@ -140,30 +140,35 @@ remplaçable sans toucher au métier.
 ## Structure
 
 ```
-com.company.hrsettlement.settlement
-├── api              contrôleur REST, DTO, mapper, gestion des erreurs
-├── application      CalculSoldeCasUsage (port primaire) + SoldeService
-├── domain           modèles, moteur, calculateurs, validateurs, predicates,
-│                    functions, ports, exceptions  ← aucune dépendance externe
-└── infrastructure   adaptateurs (impôts, inspection) + câblage Spring
+com.company.hrsettlement
+├── controller       SoldeControleur — reçoit, délègue, répond
+├── dto
+│   ├── request      SoldeRequeteDto — contrat d'entrée + Bean Validation
+│   └── response     SoldeReponseDto, ErreurReponseDto
+├── domain           records métier immuables + enum + Monnaie
+├── mapper           SoldeConvertisseur — DTO ⇄ domaine
+├── service          MoteurSolde, calculateurs, validateur,
+│                    AdministrationFiscale et InspectionTravail (interfaces)
+├── repository       HistoriqueSoldeEntite + HistoriqueSoldeDepot (JPA)
+├── exception        exceptions métier + GestionnaireGlobalErreurs
+└── config           horloge injectable + métadonnées OpenAPI
 ```
 
-## Tests — 49 tests, 12 classes
+Le détail et la justification de chaque couche sont dans [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Tests — 42 tests, 9 classes
 
 | Classe | Ce qu'elle prouve |
 |---|---|
 | `CalculateurCongesTest` | valeur journalière, arrondi au centime |
 | `CalculateurPrimeAncienneteTest` | barème par tranche, seuils exacts, éligibilité |
 | `CalculateurPenalitePreavisTest` | retenue limitée aux démissions sans préavis |
-| `CalculateurBrutTest` | consolidation, brut négatif autorisé |
-| `CalculateurAssietteFiscaleTest` | plafond d'exonération, assiette jamais négative |
-| `ValidateurDepartTest` | règles métier + extension par composition (Mockito) |
-| `MoteurSoldeTest` | orchestration, `when()`, `ArgumentCaptor`, `verify()` sur l'audit |
-| `SoldeServiceTest` | délégation stricte au domaine, archivage, absence d'archivage si rejet |
+| `ValidateurDepartTest` | rejet des données incohérentes, valeurs limites |
+| `MoteurSoldeTest` | orchestration, `when()`, `ArgumentCaptor`, `verify()`, archivage |
+| `AdministrationFiscaleProgressiveTest` | barème progressif par tranche |
 | `SoldeConvertisseurTest` | fidélité du mapping DTO ⇄ domaine |
 | `SoldeControleurTest` | contrat HTTP, 200/400, format d'erreur |
-| `AdaptateurFiscaliteProgressiveTest` | barème progressif par tranche |
-| `SoldeApiIntegrationTest` | parcours complet, câblage réel |
+| `SoldeApiIntegrationTest` | parcours complet, câblage réel, ligne en base |
 
 ## Historique Git
 
