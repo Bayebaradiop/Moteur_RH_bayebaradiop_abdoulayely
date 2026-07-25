@@ -1,0 +1,33 @@
+# Base de donnees du moteur RH.
+#
+# Le port hote 5436 est retenu car 5432 est deja occupe par un PostgreSQL local :
+# le conteneur, lui, ecoute toujours sur le port standard 5432.
+#
+#   docker compose up -d      demarre la base
+#   docker compose down       arrete la base (les donnees survivent)
+#   docker compose down -v    supprime egalement les donnees
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: moteur-rh-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-moteur_rh}
+      POSTGRES_USER: ${POSTGRES_USER:-moteur_rh}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-moteur_rh}
+    ports:
+      - "${POSTGRES_PORT:-5436}:5432"
+    volumes:
+      - moteur-rh-data:/var/lib/postgresql/data
+    healthcheck:
+      # L'application ne doit demarrer que sur une base prete a accepter les connexions
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-moteur_rh} -d ${POSTGRES_DB:-moteur_rh}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  moteur-rh-data:
+    name: moteur-rh-data

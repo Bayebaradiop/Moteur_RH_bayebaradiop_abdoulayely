@@ -1,5 +1,6 @@
 package com.company.hrsettlement.settlement;
 
+import com.company.hrsettlement.settlement.infrastructure.persistence.SettlementHistoryJpaRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -26,6 +28,9 @@ class SettlementApiIntegrationTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private SettlementHistoryJpaRepository settlementHistoryJpaRepository;
 
 	@Test
 	@DisplayName("calcule un solde de demission en appliquant le bareme fiscal reel")
@@ -52,6 +57,33 @@ class SettlementApiIntegrationTest {
 				.andExpect(jsonPath("$.taxAmount").value(16857.14))
 				.andExpect(jsonPath("$.netAmount").value(697428.56))
 				.andExpect(jsonPath("$.auditTriggered").value(false));
+	}
+
+	@Test
+	@DisplayName("archive en base le solde calcule")
+	void shouldPersistCalculatedSettlement() throws Exception {
+		String request = """
+				{
+				  "employeeId": "EMP-900",
+				  "hireDate": "2020-01-01",
+				  "departureDate": "2026-01-01",
+				  "departureReason": "RESIGNATION",
+				  "baseSalary": 3000000,
+				  "remainingLeaveDays": 5,
+				  "noticeRespected": true
+				}
+				""";
+
+		mockMvc.perform(post(SETTLEMENTS_PATH).contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isOk());
+
+		assertThat(settlementHistoryJpaRepository.findByEmployeeId("EMP-900"))
+				.singleElement()
+				.satisfies(archived -> {
+					assertThat(archived.getNetAmount()).isEqualByComparingTo("697428.56");
+					assertThat(archived.isAuditTriggered()).isFalse();
+					assertThat(archived.getRecordedAt()).isNotNull();
+				});
 	}
 
 	@Test
