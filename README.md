@@ -1,47 +1,152 @@
-# Moteur RH
+# Moteur RH — Solde de tout compte
 
-TP TDD — moteur de décision RH.
-Binôme : **bayebaradiop** / **abdoulayely**.
+API REST de calcul du solde de tout compte d'un employé : indemnité de congés non pris,
+prime d'ancienneté, pénalité de préavis, brut, impôt, net et déclenchement d'audit.
 
-La méthode suivie (RED → GREEN → REFACTOR, convention de commits) est décrite dans le
-[guide TDD](../README.md) du dépôt de TP.
+Projet développé en **architecture hexagonale** et **TDD strict** (RED → GREEN → REFACTOR),
+binôme **bayebaradiop / abdoulayely**.
+
+> L'architecture complète et la justification de chaque choix sont dans
+> **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
+---
 
 ## Stack
 
-- Java 17 / Maven
-- JUnit 5 (`junit-jupiter`) + Mockito (`mockito-junit-jupiter`)
-- Package métier : `sn.ecole221.rh`
+| Élément | Choix |
+|---|---|
+| Langage | Java 21 |
+| Framework | Spring Boot 3.5 (Web, Validation) |
+| Build | Maven |
+| Documentation | springdoc-openapi (Swagger UI) |
+| Tests | JUnit 5, Mockito, AssertJ, MockMvc |
+| Lombok | **non utilisé** — records et Java moderne |
 
-## Lancer les tests
+## Démarrer
 
 ```bash
-mvn test
+mvn test                 # 46 tests
+mvn spring-boot:run      # http://localhost:8080
 ```
 
-## Fiche TP
+- Swagger UI : http://localhost:8080/swagger-ui.html
+- Contrat de référence (API First) : [`src/main/resources/openapi/settlement-api.yaml`](src/main/resources/openapi/settlement-api.yaml)
 
-À compléter à partir de l'énoncé.
+> Le port 8080 peut être occupé : `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8085`
 
-## Contexte métier
+## Appeler l'API
 
-<en une phrase : que fait ce système, pour qui, quelle décision produit-il ?>
+```bash
+curl -X POST http://localhost:8080/api/v1/settlements \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "employeeId": "EMP-001",
+    "hireDate": "2016-01-01",
+    "departureDate": "2026-01-01",
+    "departureReason": "RETIREMENT",
+    "baseSalary": 1050000,
+    "remainingLeaveDays": 10,
+    "noticeRespected": true
+  }'
+```
 
-## Objet(s) d'entrée (Record / immuable)
+```json
+{
+  "employeeId": "EMP-001",
+  "leaveCompensation": 500000.00,
+  "seniorityBonus": 1312500.00,
+  "noticePenalty": 0.00,
+  "grossAmount": 1812500.00,
+  "taxAmount": 0.00,
+  "netAmount": 1812500.00,
+  "auditTriggered": false
+}
+```
 
-`<NomDuRecord>(<champ1 type1>, <champ2 type2>, …)`
+En cas d'erreur, la réponse a toujours la même forme :
 
-## Règles métier, par niveau
+```json
+{
+  "timestamp": "2026-01-01T10:15:30",
+  "status": 400,
+  "error": "Bad Request",
+  "message": "La date de depart doit etre posterieure a la date d'embauche",
+  "path": "/api/v1/settlements"
+}
+```
 
-| Niveau | Règle (condition → décision) | Type de test | Valeur limite à tester |
-|--------|------------------------------|--------------|------------------------|
-| 1      | <…>                          | logique pure | <seuil exact>          |
+---
 
-## Dépendances à injecter (constructeur)
+## Règles métier implémentées
 
-- `<PortExterne>` → interface, remplacée par `@Mock` en test
-- `<Clock>` → figé via `Clock.fixed(...)` en test
+| # | Règle | Classe responsable |
+|---|-------|--------------------|
+| 1 | Congés non pris : `jours × (salaire / 21)` | `LeaveCalculator` |
+| 2 | Prime d'ancienneté : retraite et licenciement économique **uniquement** ; 10 %/an les 5 premières années, 15 %/an ensuite | `SeniorityBonusCalculator` |
+| 3 | Préavis non respecté sur démission : −1 salaire mensuel (net final possiblement négatif) | `NoticePenaltyCalculator` |
+| 4 | Brut = congés + prime − pénalité | `GrossCalculator` |
+| 5 | Prime exonérée jusqu'à 5 000 000 XOF, surplus imposable | `TaxBaseCalculator` |
+| 6 | Impôt : **jamais** calculé par le moteur | `TaxAdministrationPort` |
+| 7 | Net = brut − impôt | `SettlementEngine` |
+| 8 | Net > 30 000 000 XOF → `notifyAudit(employeeId)` immédiat | `SettlementEngine` + `LabourInspectionPort` |
 
-## Journal des commits
+### Hypothèses d'interprétation de l'énoncé
 
-- [x] `chore:` init projet
-- [ ] N1 `test:` … / `feat:` …
+Deux points de l'énoncé admettaient plusieurs lectures ; le choix retenu est isolé dans une
+constante, donc modifiable en un point unique :
+
+1. **Prime d'ancienneté — taux annuels.** « 5 premières années 10 %, puis années
+   supplémentaires 15 % » est appliqué **par année** :
+   `prime = salaire × (10 % × min(années, 5) + 15 % × max(années − 5, 0))`.
+   Exemple : 10 ans → 125 % du salaire. *(constantes `BASE_YEAR_RATE` /
+   `ADDITIONAL_YEAR_RATE` dans `SeniorityBonusCalculator`)*
+2. **Règle de validation dépendante du motif.** L'énoncé demande « certaines règles
+   dépendent du motif de départ » sans les nommer : un départ à la retraite exige au moins
+   **une année** d'ancienneté *(`RetirementSeniorityRule`)*.
+
+Le barème fiscal progressif de `ProgressiveTaxAdministrationAdapter` (0 / 20 / 30 / 35 / 40 %)
+est une implémentation d'exemple : le domaine n'en dépend pas et l'adaptateur est
+remplaçable sans toucher au métier.
+
+---
+
+## Structure
+
+```
+com.company.hrsettlement.settlement
+├── api              contrôleur REST, DTO, mapper, gestion des erreurs
+├── application      SettlementUseCase (port primaire) + SettlementService
+├── domain           modèles, moteur, calculateurs, validateurs, predicates,
+│                    functions, ports, exceptions  ← aucune dépendance externe
+└── infrastructure   adaptateurs (impôts, inspection) + câblage Spring
+```
+
+## Tests — 46 tests, 12 classes
+
+| Classe | Ce qu'elle prouve |
+|---|---|
+| `LeaveCalculatorTest` | valeur journalière, arrondi au centime |
+| `SeniorityBonusCalculatorTest` | barème par tranche, seuils exacts, éligibilité |
+| `NoticePenaltyCalculatorTest` | retenue limitée aux démissions sans préavis |
+| `GrossCalculatorTest` | consolidation, brut négatif autorisé |
+| `TaxBaseCalculatorTest` | plafond d'exonération, assiette jamais négative |
+| `DepartureValidatorTest` | règles métier + extension par composition (Mockito) |
+| `SettlementEngineTest` | orchestration, `when()`, `ArgumentCaptor`, `verify()` sur l'audit |
+| `SettlementServiceTest` | délégation stricte au domaine |
+| `SettlementMapperTest` | fidélité du mapping DTO ⇄ domaine |
+| `SettlementControllerTest` | contrat HTTP, 200/400, format d'erreur |
+| `ProgressiveTaxAdministrationAdapterTest` | barème progressif par tranche |
+| `SettlementApiIntegrationTest` | parcours complet, câblage réel |
+
+## Historique Git
+
+Un commit par phase du cycle, en français :
+
+```
+RED : ajoute le test en echec de l'indemnite de conges non pris
+GREEN : implemente le calcul de l'indemnite de conges non pris
+REFACTOR : centralise l'arrondi monetaire et extrait la fonction valeur journaliere
+```
+
+`git log --oneline` retrace ainsi l'ordre réel du développement : chaque règle métier
+commence par un test rouge, constaté avant d'écrire la moindre ligne de code métier.

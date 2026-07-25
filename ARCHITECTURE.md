@@ -89,7 +89,8 @@ com.company.hrsettlement
     │   │   ├── SeniorityBonusCalculator prime d'ancienneté
     │   │   ├── NoticePenaltyCalculator  pénalité de préavis
     │   │   ├── GrossCalculator          montant brut
-    │   │   └── TaxBaseCalculator        répartition taxable / exonéré
+    │   │   ├── TaxBaseCalculator        répartition taxable / exonéré
+    │   │   └── SettlementCalculators    paramètre-objet regroupant les calculateurs
     │   ├── validator                     validation métier (indépendante de Spring)
     │   │   ├── DepartureRule            contrat d'une règle de validation
     │   │   ├── DepartureValidator       composition des règles
@@ -143,6 +144,8 @@ touche jamais le moteur.
 **`calculator` — une règle = une classe.** Chaque calculateur est une unité testable qui
 répond à une seule question métier. Ajouter une règle (ex. indemnité de licenciement) =
 créer une classe et l'injecter, **sans modifier** l'existant : c'est le **O** (Open/Closed).
+`SettlementCalculators` est un *paramètre-objet* : il évite un constructeur de moteur à huit
+arguments tout en conservant l'injection individuelle de chaque calculateur.
 
 **`predicate` / `function`.** Les conditions métier récurrentes (`ELIGIBLE_FOR_SENIORITY_BONUS`,
 `IS_RESIGNATION`, `NOTICE_NOT_RESPECTED`) et les transformations (`DAILY_SALARY`,
