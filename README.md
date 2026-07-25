@@ -25,14 +25,40 @@ binôme **bayebaradiop / abdoulayely**.
 ## Démarrer
 
 ```bash
-mvn test                 # 46 tests
-mvn spring-boot:run      # http://localhost:8080
+docker compose up -d     # PostgreSQL 16 (port hôte 5436)
+mvn test                 # 49 tests — ne nécessite pas Docker (base H2 en mémoire)
+mvn spring-boot:run      # http://localhost:8090
 ```
 
-- Swagger UI : http://localhost:8080/swagger-ui.html
+- Swagger UI : http://localhost:8090/swagger-ui.html
 - Contrat de référence (API First) : [`src/main/resources/openapi/settlement-api.yaml`](src/main/resources/openapi/settlement-api.yaml)
 
-> Le port 8080 peut être occupé : `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8085`
+> Si le port est occupé : `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8095`
+
+### Base de données
+
+| | |
+|---|---|
+| Image | `postgres:16-alpine` ([docker-compose.yml](docker-compose.yml)) |
+| Hôte / port | `localhost:5436` (le port 5432 est souvent déjà pris) |
+| Base / utilisateur / mot de passe | `moteur_rh` / `moteur_rh` / `moteur_rh` |
+| Schéma | géré par **Flyway** ([`db/migration`](src/main/resources/db/migration)), `ddl-auto: validate` |
+| Table | `settlement_history` — chaque solde calculé y est archivé |
+
+Les paramètres de connexion sont surchargeables sans rebuild :
+`DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD` (et `POSTGRES_PORT` côté compose).
+
+```bash
+docker compose up -d      # démarrer
+docker compose down       # arrêter (données conservées dans le volume)
+docker compose down -v    # arrêter et supprimer les données
+
+docker exec moteur-rh-postgres psql -U moteur_rh -d moteur_rh \
+  -c "SELECT employee_id, net_amount, audit_triggered, recorded_at FROM settlement_history;"
+```
+
+La suite de tests utilise **H2 en mémoire** ([`src/test/resources/application.yml`](src/test/resources/application.yml)) :
+`mvn test` reste exécutable sur une machine sans Docker.
 
 ## Appeler l'API
 
@@ -89,6 +115,7 @@ En cas d'erreur, la réponse a toujours la même forme :
 | 6 | Impôt : **jamais** calculé par le moteur | `TaxAdministrationPort` |
 | 7 | Net = brut − impôt | `SettlementEngine` |
 | 8 | Net > 30 000 000 XOF → `notifyAudit(employeeId)` immédiat | `SettlementEngine` + `LabourInspectionPort` |
+| 9 | Tout solde calculé est archivé ; un départ rejeté ne laisse aucune trace | `SettlementService` + `SettlementHistoryPort` |
 
 ### Hypothèses d'interprétation de l'énoncé
 
@@ -121,7 +148,7 @@ com.company.hrsettlement.settlement
 └── infrastructure   adaptateurs (impôts, inspection) + câblage Spring
 ```
 
-## Tests — 46 tests, 12 classes
+## Tests — 49 tests, 12 classes
 
 | Classe | Ce qu'elle prouve |
 |---|---|
@@ -132,7 +159,7 @@ com.company.hrsettlement.settlement
 | `TaxBaseCalculatorTest` | plafond d'exonération, assiette jamais négative |
 | `DepartureValidatorTest` | règles métier + extension par composition (Mockito) |
 | `SettlementEngineTest` | orchestration, `when()`, `ArgumentCaptor`, `verify()` sur l'audit |
-| `SettlementServiceTest` | délégation stricte au domaine |
+| `SettlementServiceTest` | délégation stricte au domaine, archivage, absence d'archivage si rejet |
 | `SettlementMapperTest` | fidélité du mapping DTO ⇄ domaine |
 | `SettlementControllerTest` | contrat HTTP, 200/400, format d'erreur |
 | `ProgressiveTaxAdministrationAdapterTest` | barème progressif par tranche |

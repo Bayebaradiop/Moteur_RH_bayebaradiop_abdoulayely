@@ -99,7 +99,8 @@ com.company.hrsettlement
     │   ├── function                      transformations réutilisables
     │   ├── port                          PORTS SECONDAIRES (interfaces)
     │   │   ├── TaxAdministrationPort     calcul de l'impôt (système externe)
-    │   │   └── LabourInspectionPort      notification d'audit (système externe)
+    │   │   ├── LabourInspectionPort      notification d'audit (système externe)
+    │   │   └── SettlementHistoryPort     archivage des soldes calculés
     │   └── exception                     exceptions métier explicites
     │
     └── infrastructure                    ADAPTATEURS SECONDAIRES (sortants)
@@ -107,8 +108,13 @@ com.company.hrsettlement
         │   └── ProgressiveTaxAdministrationAdapter
         ├── inspection
         │   └── LoggingLabourInspectionAdapter
+        ├── persistence                   PostgreSQL (Docker) + Flyway
+        │   ├── SettlementHistoryEntity   table settlement_history
+        │   ├── SettlementHistoryJpaRepository
+        │   └── JpaSettlementHistoryAdapter
         └── config
             ├── DomainConfiguration       instancie le domaine en beans Spring
+            ├── TimeConfiguration         horloge injectable
             └── OpenApiConfiguration      métadonnées de la documentation
 ```
 
@@ -198,6 +204,21 @@ d'erreur unique. C'est la frontière de traduction : le domaine lève `InvalidDa
 
 Les implémentations des ports vivent ici, annotées Spring. Remplacer l'adaptateur fiscal
 par un appel à une API externe se fait **sans modifier une seule ligne du domaine**.
+
+**Persistance.** La base PostgreSQL est un détail d'infrastructure de plus. Le domaine
+exprime `SettlementHistoryPort.record(Settlement)` ; `JpaSettlementHistoryAdapter` le
+satisfait avec JPA. L'entité `SettlementHistoryEntity` est **distincte du record
+`Settlement`** : les exigences de JPA (constructeur sans argument, champs mutables,
+identifiant technique) ne doivent pas rendre le modèle métier mutable.
+
+L'archivage est déclenché par `SettlementService`, pas par le moteur : conserver une trace
+est une préoccupation applicative, et le moteur doit rester un calcul pur, exécutable dans
+un test sans base de données. Le `@Transactional` du service garantit qu'un départ rejeté
+par le domaine ne laisse aucune ligne derrière lui.
+
+Le schéma est versionné par **Flyway** et Hibernate est en `ddl-auto: validate` : la
+structure de la base est du code relu et rejouable, jamais une modification manuelle. La
+suite de tests, elle, tourne sur H2 en mémoire pour rester exécutable sans Docker.
 
 `DomainConfiguration` instancie les objets du domaine (calculateurs, validateur, moteur) en
 `@Bean` par injection de constructeur. C'est ce qui permet au domaine de rester sans
